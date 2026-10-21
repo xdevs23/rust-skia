@@ -17,7 +17,13 @@ pub struct BackendContextBuilder<'a> {
     instance_extensions: Vec<String>,
     device_extensions: Vec<String>,
     protected_context: Option<gpu::Protected>,
-    device_features: Option<&'a PhysicalDeviceFeatures2>,
+    device_features: Option<DeviceFeatures<'a>>,
+}
+
+#[derive(Clone, Copy)]
+enum DeviceFeatures<'a> {
+    Borrowed(&'a PhysicalDeviceFeatures2),
+    SamplerYcbcrConversion(bool),
 }
 
 impl std::fmt::Debug for BackendContextBuilder<'_> {
@@ -102,7 +108,20 @@ impl<'a> BackendContextBuilder<'a> {
     /// Skia enables the optional paths that depend on a device feature only for the features
     /// passed here, for example sampling textures through a YCbCr conversion.
     pub fn with_device_features(mut self, device_features: &'a PhysicalDeviceFeatures2) -> Self {
-        self.device_features = Some(device_features);
+        self.device_features = Some(DeviceFeatures::Borrowed(device_features));
+        self
+    }
+
+    /// Tells Skia whether `samplerYcbcrConversion` is enabled on `device`.
+    ///
+    /// Skia samples textures through a YCbCr conversion, such as hardware buffers in YUV formats
+    /// or with an external format, only if the feature is enabled. Skia treats every other device
+    /// feature as not enabled. Unlike [`Self::with_device_features()`], this borrows nothing.
+    ///
+    /// This replaces the features set before by [`Self::with_device_features()`] and is replaced
+    /// by it in turn.
+    pub fn with_sampler_ycbcr_conversion(mut self, enabled: bool) -> Self {
+        self.device_features = Some(DeviceFeatures::SamplerYcbcrConversion(enabled));
         self
     }
 
@@ -136,13 +155,20 @@ impl<'a> BackendContextBuilder<'a> {
                 &device_extensions,
             )
         };
-        if let Some(device_features) = self.device_features {
-            unsafe {
+        match self.device_features {
+            Some(DeviceFeatures::Borrowed(device_features)) => unsafe {
                 sb::C_VulkanBackendContext_setDeviceFeatures2(
                     context.native.as_ptr() as _,
                     device_features,
                 )
-            }
+            },
+            Some(DeviceFeatures::SamplerYcbcrConversion(enabled)) => unsafe {
+                sb::C_VulkanBackendContext_setSamplerYcbcrConversion(
+                    context.native.as_ptr() as _,
+                    enabled,
+                )
+            },
+            None => {}
         }
         context
     }

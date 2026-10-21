@@ -137,6 +137,17 @@ extern "C" void C_VulkanBackendContext_setDeviceFeatures2(
     self->fDeviceFeatures2 = deviceFeatures2;
 }
 
+extern "C" void C_VulkanBackendContext_setSamplerYcbcrConversion(
+    skgpu::VulkanBackendContext *self, bool enabled) {
+    static const VkPhysicalDeviceSamplerYcbcrConversionFeatures samplerYcbcrConversion = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES, nullptr, VK_TRUE};
+    static const VkPhysicalDeviceFeatures2 deviceFeatures2 = {
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+        const_cast<VkPhysicalDeviceSamplerYcbcrConversionFeatures *>(&samplerYcbcrConversion),
+        {}};
+    self->fDeviceFeatures2 = enabled ? &deviceFeatures2 : nullptr;
+}
+
 //
 // VulkanTypes.h
 //

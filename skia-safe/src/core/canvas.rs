@@ -547,6 +547,24 @@ impl Canvas {
         }
     }
 
+    /// Returns an [`Image`] of the contents the surface owning this canvas holds now, or `None` if
+    /// no surface owns the canvas.
+    ///
+    /// Subsequent drawing is not captured. `bounds` selects the part of the surface to capture, in
+    /// device pixels; `None` captures all of it. Like [`Surface::image_snapshot_with_bounds()`],
+    /// this returns `None` if `bounds` does not intersect the surface.
+    ///
+    /// Unlike [`Self::surface()`], the surface is borrowed for the duration of the call only, so
+    /// this can be called while drawing to the canvas.
+    pub fn snapshot_surface(&self, bounds: Option<IRect>) -> Option<Image> {
+        // The surface owns the canvas and so outlives `self`. The handle does not leave this call.
+        let mut surface = unsafe { self.surface() }?;
+        match bounds {
+            Some(bounds) => surface.image_snapshot_with_bounds(bounds),
+            None => Some(surface.image_snapshot()),
+        }
+    }
+
     /// Returns the pixel base address, [`ImageInfo`], `row_bytes`, and origin if the pixels
     /// can be read directly.
     ///
@@ -2461,7 +2479,7 @@ impl AutoCanvasRestore {
 #[cfg(test)]
 mod tests {
     use crate::{
-        AlphaType, Canvas, ClipOp, Color, ColorType, ImageInfo, OwnedCanvas, Rect,
+        AlphaType, Canvas, ClipOp, Color, ColorType, IRect, ImageInfo, OwnedCanvas, Rect,
         canvas::SaveLayerFlags, canvas::SaveLayerRec, surfaces,
     };
 
@@ -2521,6 +2539,35 @@ mod tests {
         let canvas = surface.canvas();
         dbg!(canvas as *const _);
         canvas.clear(Color::RED);
+    }
+
+    #[test]
+    fn test_snapshot_surface() {
+        let mut surface =
+            surfaces::raster(&ImageInfo::new_n32_premul((4, 3), None), 0, None).unwrap();
+        let canvas = surface.canvas();
+        canvas.clear(Color::RED);
+
+        let whole = canvas.snapshot_surface(None).unwrap();
+        assert_eq!((4, 3), (whole.width(), whole.height()));
+
+        let part = canvas
+            .snapshot_surface(Some(IRect::from_xywh(1, 1, 2, 2)))
+            .unwrap();
+        assert_eq!((2, 2), (part.width(), part.height()));
+
+        assert!(
+            canvas
+                .snapshot_surface(Some(IRect::from_xywh(10, 10, 2, 2)))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_snapshot_surface_of_canvas_without_surface() {
+        let mut pixels: [u32; 4] = Default::default();
+        let canvas = Canvas::from_raster_direct_n32((2, 2), pixels.as_mut(), None).unwrap();
+        assert!(canvas.snapshot_surface(None).is_none());
     }
 
     #[test]
